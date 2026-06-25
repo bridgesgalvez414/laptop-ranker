@@ -7,9 +7,6 @@ st.set_page_config(layout="wide")
 
 st.title("💻 Laptop Ranking Tool")
 
-# -------------------------------
-# CPU benchmark lookup
-# -------------------------------
 cpu_scores = {
     "i3": 6500,
     "i5": 12000,
@@ -19,16 +16,9 @@ cpu_scores = {
     "ryzen 7": 20000
 }
 
-# -------------------------------
-# USER INPUT
-# -------------------------------
 st.subheader("🔗 Paste Currys laptop links (one per line)")
-
 link_input = st.text_area("Laptop URLs")
 
-# -------------------------------
-# WEIGHTS (sliders)
-# -------------------------------
 st.sidebar.header("⚖️ Weight Importance")
 
 w_price = st.sidebar.slider("Price", 0.0, 1.0, 0.4)
@@ -42,9 +32,6 @@ w_ram /= total
 w_cpu /= total
 w_storage /= total
 
-# -------------------------------
-# SCRAPE FUNCTION
-# -------------------------------
 def scrape_laptops(links):
     headers = {"User-Agent": "Mozilla/5.0"}
     data = []
@@ -61,13 +48,9 @@ def scrape_laptops(links):
 
             text = soup.text.lower()
 
-            # RAM
             ram = next((r for r in [4, 8, 16, 32] if f"{r} gb ram" in text), 0)
-
-            # Storage
             storage = next((s for s in [128, 256, 512, 1024] if f"{s} gb ssd" in text), 0)
 
-            # CPU
             cpu = "unknown"
             if "i3" in text:
                 cpu = "i3"
@@ -95,13 +78,39 @@ def scrape_laptops(links):
             })
 
         except:
-            st.warning(f"⚠️ Failed to load: {link}")
+            st.warning(f"⚠️ Failed: {link}")
 
     return pd.DataFrame(data)
 
-# -------------------------------
-# RUN BUTTON
-# -------------------------------
 if st.button("🚀 Analyse laptops"):
 
-    links = [l.strip
+    links = [l.strip() for l in link_input.split("\n") if l.strip()]
+
+    if not links:
+        st.warning("Please paste at least one link.")
+    else:
+        df = scrape_laptops(links)
+
+        if df.empty:
+            st.error("No laptops found.")
+        else:
+            df["PriceScore"] = 1 - (
+                (df["Price"] - df["Price"].min()) /
+                (df["Price"].max() - df["Price"].min() + 1e-6)
+            )
+
+            df["RAMScore"] = df["RAM"] / (df["RAM"].max() + 1e-6)
+            df["CPUScore"] = df["CPU Score"] / (df["CPU Score"].max() + 1e-6)
+            df["StorageScore"] = df["Storage"] / (df["Storage"].max() + 1e-6)
+
+            df["Score"] = (
+                df["PriceScore"] * w_price +
+                df["RAMScore"] * w_ram +
+                df["CPUScore"] * w_cpu +
+                df["StorageScore"] * w_storage
+            )
+
+            df = df.sort_values(by="Score", ascending=False)
+
+            st.subheader("🏆 Ranked Laptops")
+            st.dataframe(df[["Name","Price","RAM","Storage","CPU","Score","Link"]])
