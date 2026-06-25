@@ -5,10 +5,10 @@ from bs4 import BeautifulSoup
 
 st.set_page_config(layout="wide")
 
-st.title("💻 Laptop Ranking Tool (Currys)")
+st.title("💻 Laptop Ranking Tool")
 
 # -------------------------------
-# CPU benchmark lookup (simplified)
+# CPU benchmark lookup
 # -------------------------------
 cpu_scores = {
     "i3": 6500,
@@ -20,44 +20,46 @@ cpu_scores = {
 }
 
 # -------------------------------
-# Scrape Currys
+# USER INPUT
 # -------------------------------
-@st.cache_data
-@st.cache_data
+st.subheader("🔗 Paste Currys laptop links (one per line)")
 
-def get_laptops():
-    base_url = "https://www.currys.co.uk"
-    url = base_url + "/computing/laptops/laptops/windows-laptops?pmin=100.0&pmax=800.0"
+link_input = st.text_area("Laptop URLs")
 
+# -------------------------------
+# WEIGHTS (sliders)
+# -------------------------------
+st.sidebar.header("⚖️ Weight Importance")
+
+w_price = st.sidebar.slider("Price", 0.0, 1.0, 0.4)
+w_ram = st.sidebar.slider("RAM", 0.0, 1.0, 0.2)
+w_cpu = st.sidebar.slider("CPU", 0.0, 1.0, 0.3)
+w_storage = st.sidebar.slider("Storage", 0.0, 1.0, 0.1)
+
+total = w_price + w_ram + w_cpu + w_storage
+w_price /= total
+w_ram /= total
+w_cpu /= total
+w_storage /= total
+
+# -------------------------------
+# SCRAPE FUNCTION
+# -------------------------------
+def scrape_laptops(links):
     headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(url, headers=headers)
-    soup = BeautifulSoup(r.text, "lxml")
-
-    # Step 1: find product links
-    links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-
-        if "/products/" in href and href.endswith(".html"):
-            full_link = base_url + href
-            if full_link not in links:
-                links.append(full_link)
-
     data = []
 
-    # Step 2: scrape each product page
-    for link in links[:20]:  # limit to avoid slow loading
+    for link in links:
         try:
-            page = requests.get(link, headers=headers)
-            psoup = BeautifulSoup(page.text, "lxml")
+            r = requests.get(link, headers=headers)
+            soup = BeautifulSoup(r.text, "lxml")
 
-            name = psoup.find("h1").text.strip()
+            name = soup.find("h1").text.strip()
 
-            # Price
-            price_tag = psoup.find("strong")
+            price_tag = soup.find("strong")
             price = float(price_tag.text.replace("£", "").replace(",", ""))
 
-            text = psoup.text.lower()
+            text = soup.text.lower()
 
             # RAM
             ram = next((r for r in [4, 8, 16, 32] if f"{r} gb ram" in text), 0)
@@ -93,65 +95,13 @@ def get_laptops():
             })
 
         except:
-            continue
+            st.warning(f"⚠️ Failed to load: {link}")
 
     return pd.DataFrame(data)
-    
-df = get_laptops()
-
-if df.empty:
-    st.error("No laptops found — Currys structure may have changed.")
-    st.stop()
 
 # -------------------------------
-# Sliders (weights)
+# RUN BUTTON
 # -------------------------------
-st.sidebar.header("⚖️ Weight Your Priorities")
+if st.button("🚀 Analyse laptops"):
 
-w_price = st.sidebar.slider("Price importance", 0.0, 1.0, 0.4)
-w_ram = st.sidebar.slider("RAM importance", 0.0, 1.0, 0.2)
-w_cpu = st.sidebar.slider("CPU importance", 0.0, 1.0, 0.3)
-w_storage = st.sidebar.slider("Storage importance", 0.0, 1.0, 0.1)
-
-# Normalize weights
-total = w_price + w_ram + w_cpu + w_storage
-w_price /= total
-w_ram /= total
-w_cpu /= total
-w_storage /= total
-
-# -------------------------------
-# Normalisation
-# -------------------------------
-df["PriceScore"] = 1 - (df["Price"] - df["Price"].min()) / (df["Price"].max() - df["Price"].min())
-df["RAMScore"] = df["RAM"] / df["RAM"].max()
-df["CPUScore"] = df["CPU Score"] / df["CPU Score"].max()
-df["StorageScore"] = df["Storage"] / df["Storage"].max()
-
-# -------------------------------
-# Final Score
-# -------------------------------
-df["Score"] = (
-    df["PriceScore"] * w_price +
-    df["RAMScore"] * w_ram +
-    df["CPUScore"] * w_cpu +
-    df["StorageScore"] * w_storage
-)
-
-df = df.sort_values(by="Score", ascending=False)
-
-# -------------------------------
-# Display
-# -------------------------------
-st.subheader("🏆 Ranked Laptops")
-
-def make_clickable(link):
-    return f'<a href="{link}" target="_blank">View</a>'
-
-df["Link"] = df["Link"].apply(make_clickable)
-
-st.write(
-    df[["Name", "Price", "RAM", "Storage", "CPU", "Score", "Link"]]
-    .to_html(escape=False, index=False),
-    unsafe_allow_html=True
-)
+    links = [l.strip
