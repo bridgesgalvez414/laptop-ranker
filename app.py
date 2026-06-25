@@ -23,39 +23,49 @@ cpu_scores = {
 # Scrape Currys
 # -------------------------------
 @st.cache_data
+@st.cache_data
+
 def get_laptops():
-    url = "https://www.currys.co.uk/computing/laptops/laptops/windows-laptops?pmin=100.0&pmax=800.0"
+    base_url = "https://www.currys.co.uk"
+    url = base_url + "/computing/laptops/laptops/windows-laptops?pmin=100.0&pmax=800.0"
+
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(url, headers=headers)
-
     soup = BeautifulSoup(r.text, "lxml")
 
-    products = soup.select(".product")
+    # Step 1: find product links
+    links = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+
+        if "/products/" in href and href.endswith(".html"):
+            full_link = base_url + href
+            if full_link not in links:
+                links.append(full_link)
+
     data = []
 
-    for p in products:
+    # Step 2: scrape each product page
+    for link in links[:20]:  # limit to avoid slow loading
         try:
-            name = p.select_one(".productTitle").text.strip()
-            price_raw = p.select_one(".price").text.strip()
-            price = float(price_raw.replace("£", "").replace(",", ""))
+            page = requests.get(link, headers=headers)
+            psoup = BeautifulSoup(page.text, "lxml")
 
-            link = "https://www.currys.co.uk" + p.select_one("a")["href"]
+            name = psoup.find("h1").text.strip()
 
-            text = p.text.lower()
+            # Price
+            price_tag = psoup.find("strong")
+            price = float(price_tag.text.replace("£", "").replace(",", ""))
 
-            # Extract RAM
-            ram = 0
-            for r_val in [4, 8, 16, 32]:
-                if f"{r_val} gb ram" in text:
-                    ram = r_val
+            text = psoup.text.lower()
 
-            # Extract storage
-            storage = 0
-            for s_val in [128, 256, 512, 1024]:
-                if f"{s_val} gb ssd" in text:
-                    storage = s_val
+            # RAM
+            ram = next((r for r in [4, 8, 16, 32] if f"{r} gb ram" in text), 0)
 
-            # Extract CPU
+            # Storage
+            storage = next((s for s in [128, 256, 512, 1024] if f"{s} gb ssd" in text), 0)
+
+            # CPU
             cpu = "unknown"
             if "i3" in text:
                 cpu = "i3"
@@ -86,7 +96,7 @@ def get_laptops():
             continue
 
     return pd.DataFrame(data)
-
+    
 df = get_laptops()
 
 if df.empty:
